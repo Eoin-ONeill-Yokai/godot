@@ -1,4 +1,4 @@
-/*************************************************************************/
+﻿/*************************************************************************/
 /*  rich_text_label.cpp                                                  */
 /*************************************************************************/
 /*                       This file is part of:                           */
@@ -30,10 +30,11 @@
 
 #include "rich_text_label.h"
 
+#include "core/math/math_defs.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
+#include "modules/regex/regex.h"
 #include "scene/scene_string_names.h"
-
 #ifdef TOOLS_ENABLED
 #include "editor/editor_scale.h"
 #endif
@@ -139,6 +140,7 @@ Rect2 RichTextLabel::_get_text_rect() {
 	Ref<StyleBox> style = get_stylebox("normal");
 	return Rect2(style->get_offset(), get_size() - style->get_minimum_size());
 }
+
 int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &y, int p_width, int p_line, ProcessMode p_mode, const Ref<Font> &p_base_font, const Color &p_base_color, const Color &p_font_color_shadow, bool p_shadow_as_outline, const Point2 &shadow_ofs, const Point2i &p_click_pos, Item **r_click_item, int *r_click_char, bool *r_outside, int p_char_count) {
 
 	RID ci;
@@ -292,7 +294,6 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 	Color selection_bg;
 
 	if (p_mode == PROCESS_DRAW) {
-
 		selection_fg = get_color("font_color_selected");
 		selection_bg = get_color("selection_color");
 	}
@@ -343,17 +344,23 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 				Color font_color_shadow;
 				bool underline = false;
 				bool strikethrough = false;
+				ItemFade *fade = nullptr;
+				int it_char_start = p_char_count;
+
+				Vector<ItemFX *> fxStack = Vector<ItemFX *>();
+				bool custom_fx_ok = true;
 
 				if (p_mode == PROCESS_DRAW) {
 					color = _find_color(text, p_base_color);
 					font_color_shadow = _find_color(text, p_font_color_shadow);
 					if (_find_underline(text) || (_find_meta(text, &meta) && underline_meta)) {
-
 						underline = true;
 					} else if (_find_strikethrough(text)) {
-
 						strikethrough = true;
 					}
+
+					fade = _fetch_by_type<ItemFade>(text, ItemType::ITEM_FADE);
+					_fetch_item_stack<ItemFX>(text, fxStack);
 
 				} else if (p_mode == PROCESS_CACHE) {
 					l.char_count += text->text.length();
@@ -431,8 +438,10 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 
 								ofs += cw;
 							} else if (p_mode == PROCESS_DRAW) {
-
 								bool selected = false;
+								Color fxcolor = Color(color);
+								Point2 fxOffset;
+
 								if (selection.active) {
 
 									int cofs = (&c[i]) - cf;
@@ -442,8 +451,72 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 								}
 
 								int cw = 0;
+								int c_item_offset = p_char_count - it_char_start;
 
-								bool visible = visible_characters < 0 || (p_char_count < visible_characters && YRANGE_VISIBLE(y + lh - line_descent - line_ascent, line_ascent + line_descent));
+								float fadedVisibility = 1.0f;
+								if (fade) {
+									if (c_item_offset >= fade->startingIndex) {
+										fadedVisibility -= (float)(c_item_offset - fade->startingIndex) / (float)fade->length;
+										fadedVisibility = fadedVisibility < 0.0f ? 0.0f : fadedVisibility;
+									}
+									fxcolor.a = fadedVisibility;
+								}
+
+								bool visible = visible_characters < 0 || ((p_char_count < visible_characters && YRANGE_VISIBLE(y + lh - line_descent - line_ascent, line_ascent + line_descent)) &&
+																				 fadedVisibility > 0.0f);
+
+								for (int j = 0; j < fxStack.size(); j++) {
+									ItemCustomFX *customfx = dynamic_cast<ItemCustomFX *>(fxStack[j]);
+									ItemShake *shake = dynamic_cast<ItemShake *>(fxStack[j]);
+									ItemWave *wave = dynamic_cast<ItemWave *>(fxStack[j]);
+									ItemTornado *tornado = dynamic_cast<ItemTornado *>(fxStack[j]);
+									ItemRainbow *rainbow = dynamic_cast<ItemRainbow *>(fxStack[j]);
+
+									if (customfx && custom_fx_ok) {
+										Ref<CustomFXChar> cfx = Ref<CustomFXChar>(memnew(CustomFXChar));
+										cfx->cfx = customfx;
+										cfx->relative_index = c_item_offset;
+										cfx->absolute_index = p_char_count;
+										cfx->visibility = visible;
+										cfx->offset = fxOffset;
+										cfx->color = fxcolor;
+										cfx->character = c[i];
+
+										CustomFXStatus status = _process_custom_fx_internal(cfx);
+										custom_fx_ok = (status != CustomFXStatus::FX_PROCESS_ERROR);
+
+										fxOffset += cfx->offset;
+										fxcolor = cfx->color;
+										visible &= cfx->visibility;
+									} else if (shake) {
+										uint64_t char_current_rand = shake->offset_random(c_item_offset);
+										uint64_t char_previous_rand = shake->offset_previous_random(c_item_offset);
+										double current_offset = Math::range_lerp(char_current_rand % RAND_MAX, 0, RAND_MAX, 0.0f, 2.f * (float)Math_PI);
+										double previous_offset = Math::range_lerp(char_previous_rand % RAND_MAX, 0, RAND_MAX, 0.0f, 2.f * (float)Math_PI);
+										double nTime = (double)(shake->elapsedTime / (0.5f / shake->rate));
+										nTime = (nTime > 1.0) ? 1.0 : nTime;
+										fxOffset += Point2(Math::lerp(Math::sin(previous_offset),
+																   Math::sin(current_offset),
+																   nTime),
+															Math::lerp(Math::cos(previous_offset),
+																	Math::cos(current_offset),
+																	nTime)) *
+													(float)shake->strength / 10.0f;
+									} else if (wave) {
+										double value = Math::sin(wave->frequency * wave->elapsedTime + ((p_ofs.x + pofs) / 50)) * (wave->amplitude / 10.0f);
+										fxOffset += Point2(0, 1) * value;
+									} else if (tornado) {
+										double x = Math::sin(tornado->frequency * tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (tornado->radius);
+										double y = Math::cos(tornado->frequency * tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (tornado->radius);
+										fxOffset += Point2(x, y);
+									} else if (rainbow) {
+										fxcolor = fxcolor.from_hsv(rainbow->frequency * (rainbow->elapsedTime + ((p_ofs.x + pofs) / 50)),
+												rainbow->saturation,
+												rainbow->value,
+												fxcolor.a);
+									}
+								}
+
 								if (visible)
 									line_is_blank = false;
 
@@ -451,6 +524,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 									visible = false;
 
 								if (visible) {
+
 									if (selected) {
 										cw = font->get_char_size(c[i], c[i + 1]).x;
 										draw_rect(Rect2(p_ofs.x + pofs, p_ofs.y + y, cw, lh), selection_bg);
@@ -469,9 +543,9 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 									}
 
 									if (selected) {
-										drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent), c[i], c[i + 1], override_selected_font_color ? selection_fg : color);
+										drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent), c[i], c[i + 1], override_selected_font_color ? selection_fg : fxcolor);
 									} else {
-										cw = drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent), c[i], c[i + 1], color);
+										cw = drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent) + fxOffset, c[i], c[i + 1], fxcolor);
 									}
 								}
 
@@ -800,6 +874,31 @@ void RichTextLabel::_update_scroll() {
 	}
 }
 
+void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float deltaTime) {
+	Item *it = p_frame;
+	while (it) {
+		ItemFX *ifx = dynamic_cast<ItemFX *>(it);
+
+		if (!ifx) {
+			it = _get_next_item(it, true);
+			continue;
+		}
+
+		ifx->elapsedTime += deltaTime;
+
+		ItemShake *shake = dynamic_cast<ItemShake *>(it);
+		if (shake) {
+			bool cycle = (shake->elapsedTime > (1.0f / shake->rate));
+			if (cycle) {
+				shake->elapsedTime -= (1.0f / shake->rate);
+				shake->reroll_random();
+			}
+		}
+
+		it = _get_next_item(it, true);
+	}
+}
+
 void RichTextLabel::_notification(int p_what) {
 
 	switch (p_what) {
@@ -873,6 +972,11 @@ void RichTextLabel::_notification(int p_what) {
 
 				from_line++;
 			}
+		} break;
+		case NOTIFICATION_PROCESS: {
+			float dt = get_process_delta_time();
+			_update_fx(main, dt);
+			update();
 		}
 	}
 }
@@ -1023,15 +1127,11 @@ void RichTextLabel::_gui_input(Ref<InputEvent> p_event) {
 		}
 
 		if (b->get_button_index() == BUTTON_WHEEL_UP) {
-
 			if (scroll_active)
-
 				vscroll->set_value(vscroll->get_value() - vscroll->get_page() * b->get_factor() * 0.5 / 8);
 		}
 		if (b->get_button_index() == BUTTON_WHEEL_DOWN) {
-
 			if (scroll_active)
-
 				vscroll->set_value(vscroll->get_value() + vscroll->get_page() * b->get_factor() * 0.5 / 8);
 		}
 	}
@@ -1282,8 +1382,19 @@ bool RichTextLabel::_find_strikethrough(Item *p_item) {
 	return false;
 }
 
-bool RichTextLabel::_find_meta(Item *p_item, Variant *r_meta, ItemMeta **r_item) {
+bool RichTextLabel::_find_by_type(Item *p_item, ItemType type) {
+	Item *item = p_item;
 
+	while (item) {
+		if (item->type == type) {
+			return true;
+		}
+		item = item->parent;
+	}
+	return false;
+}
+
+bool RichTextLabel::_find_meta(Item *p_item, Variant *r_meta, ItemMeta **r_item) {
 	Item *item = p_item;
 
 	while (item) {
@@ -1615,6 +1726,49 @@ void RichTextLabel::push_table(int p_columns) {
 	_add_item(item, true, true);
 }
 
+void RichTextLabel::push_fade(int startIndex, int length) {
+	ItemFade *item = memnew(ItemFade);
+	item->startingIndex = startIndex;
+	item->length = length;
+	_add_item(item, true);
+}
+
+void RichTextLabel::push_shake(int strength = 10, float rate = 24.0f) {
+	ItemShake *item = memnew(ItemShake);
+	item->strength = strength;
+	item->rate = rate;
+	_add_item(item, true);
+}
+
+void RichTextLabel::push_wave(float frequency = 1.0f, float amplitude = 10.0f) {
+	ItemWave *item = memnew(ItemWave);
+	item->frequency = frequency;
+	item->amplitude = amplitude;
+	_add_item(item, true);
+}
+
+void RichTextLabel::push_tornado(float frequency = 1.0f, float radius = 10.0f) {
+	ItemTornado *item = memnew(ItemTornado);
+	item->frequency = frequency;
+	item->radius = radius;
+	_add_item(item, true);
+}
+
+void RichTextLabel::push_rainbow(float saturation, float value, float frequency) {
+	ItemRainbow *item = memnew(ItemRainbow);
+	item->frequency = frequency;
+	item->saturation = saturation;
+	item->value = value;
+	_add_item(item, true);
+}
+
+void RichTextLabel::push_customfx(String identifier, Dictionary environment) {
+	ItemCustomFX *item = memnew(ItemCustomFX);
+	item->identifier = identifier;
+	item->environment = environment;
+	_add_item(item, true);
+}
+
 void RichTextLabel::set_table_column_expand(int p_column, bool p_expand, int p_ratio) {
 
 	ERR_FAIL_COND(current->type != ITEM_TABLE);
@@ -1759,6 +1913,8 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 	bool in_bold = false;
 	bool in_italics = false;
 
+	set_process(false);
+
 	while (pos < p_bbcode.length()) {
 
 		int brk_pos = p_bbcode.find("[", pos);
@@ -1782,7 +1938,6 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 		}
 
 		String tag = p_bbcode.substr(brk_pos + 1, brk_end - brk_pos - 1);
-
 		if (tag.begins_with("/") && tag_stack.size()) {
 
 			bool tag_ok = tag_stack.size() && tag_stack.front()->get() == tag.substr(1, tag.length());
@@ -1989,10 +2144,144 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 			pos = brk_end + 1;
 			tag_stack.push_front("font");
 
-		} else {
+		} else if (tag.begins_with("fade")) {
+			Vector<String> tags = tag.split(" ", false);
+			int startIndex = 0;
+			int length = 10;
 
-			add_text("["); //ignore
-			pos = brk_pos + 1;
+			if (tags.size() > 1) {
+				tags.remove(0);
+				for (int i = 0; i < tags.size(); i++) {
+					String expr = tags[i];
+					if (expr.begins_with("start=")) {
+						String start_str = expr.substr(6, expr.length());
+						startIndex = start_str.to_int();
+					} else if (expr.begins_with("length=")) {
+						String end_str = expr.substr(7, expr.length());
+						length = end_str.to_int();
+					}
+				}
+			}
+
+			push_fade(startIndex, length);
+			pos = brk_end + 1;
+			tag_stack.push_front("fade");
+		} else if (tag.begins_with("shake")) {
+			Vector<String> tags = tag.split(" ", false);
+			int strength = 5;
+			float rate = 20.0f;
+
+			if (tags.size() > 1) {
+				tags.remove(0);
+				for (int i = 0; i < tags.size(); i++) {
+					String expr = tags[i];
+					if (expr.begins_with("level=")) {
+						String str_str = expr.substr(6, expr.length());
+						strength = str_str.to_int();
+					} else if (expr.begins_with("rate=")) {
+						String rate_str = expr.substr(5, expr.length());
+						rate = rate_str.to_float();
+					}
+				}
+			}
+
+			push_shake(strength, rate);
+			pos = brk_end + 1;
+			tag_stack.push_front("shake");
+			set_process(true);
+		} else if (tag.begins_with("wave")) {
+			Vector<String> tags = tag.split(" ", false);
+			float amplitude = 10.0f;
+			float period = 1.0f;
+
+			if (tags.size() > 1) {
+				tags.remove(0);
+				for (int i = 0; i < tags.size(); i++) {
+					String expr = tags[i];
+					if (expr.begins_with("amp=")) {
+						String amp_str = expr.substr(4, expr.length());
+						amplitude = amp_str.to_float();
+					} else if (expr.begins_with("freq=")) {
+						String period_str = expr.substr(5, expr.length());
+						period = period_str.to_float();
+					}
+				}
+			}
+
+			push_wave(period, amplitude);
+			pos = brk_end + 1;
+			tag_stack.push_front("wave");
+			set_process(true);
+		} else if (tag.begins_with("tornado")) {
+			Vector<String> tags = tag.split(" ", false);
+			float radius = 10.0f;
+			float frequency = 1.0f;
+
+			if (tags.size() > 1) {
+				tags.remove(0);
+				for (int i = 0; i < tags.size(); i++) {
+					String expr = tags[i];
+					if (expr.begins_with("radius=")) {
+						String amp_str = expr.substr(7, expr.length());
+						radius = amp_str.to_float();
+					} else if (expr.begins_with("freq=")) {
+						String period_str = expr.substr(5, expr.length());
+						frequency = period_str.to_float();
+					}
+				}
+			}
+
+			push_tornado(frequency, radius);
+			pos = brk_end + 1;
+			tag_stack.push_front("tornado");
+			set_process(true);
+		} else if (tag.begins_with("rainbow")) {
+			Vector<String> tags = tag.split(" ", false);
+			float saturation = 0.8f;
+			float value = 0.8f;
+			float frequency = 1.0f;
+
+			if (tags.size() > 1) {
+				tags.remove(0);
+				for (int i = 0; i < tags.size(); i++) {
+					String expr = tags[i];
+					if (expr.begins_with("sat=")) {
+						String sat_str = expr.substr(4, expr.length());
+						saturation = sat_str.to_float();
+					} else if (expr.begins_with("val=")) {
+						String val_str = expr.substr(4, expr.length());
+						value = val_str.to_float();
+					} else if (expr.begins_with("freq=")) {
+						String freq_str = expr.substr(5, expr.length());
+						frequency = freq_str.to_float();
+					}
+				}
+			}
+
+			push_rainbow(saturation, value, frequency);
+			pos = brk_end + 1;
+			tag_stack.push_front("rainbow");
+			set_process(true);
+		} else {
+			Vector<String> expr = tag.split(" ", false);
+			if (expr.size() < 1) {
+				add_text("[");
+				pos = brk_pos + 1;
+			} else {
+				String identifier = expr[0];
+				expr.remove(0);
+				Dictionary properties = Dictionary();
+
+				if (_parse_custom_fx_internal(identifier, expr, properties)) { //todo: replace with dictionary check for command
+					push_customfx(identifier, properties);
+					pos = brk_end + 1;
+					tag_stack.push_front(identifier);
+					set_process(true);
+				} else {
+					add_text("["); //ignore
+					pos = brk_pos + 1;
+				}
+			}
 		}
 	}
 
@@ -2277,6 +2566,14 @@ void RichTextLabel::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_content_height"), &RichTextLabel::get_content_height);
 
+	ClassDB::bind_method(D_METHOD("_parse_custom_fx_internal", "identifier", "expressions", "environment"), &RichTextLabel::_parse_custom_fx_internal);
+	ClassDB::bind_method(D_METHOD("parse_expression_for_values", "expression"), &RichTextLabel::parse_expression_for_values);
+
+	BIND_VMETHOD(MethodInfo(Variant::BOOL, "_parse_custom_fx", PropertyInfo(Variant::STRING, "identifier"),
+			PropertyInfo(Variant::DICTIONARY, "environment")));
+
+	BIND_VMETHOD(MethodInfo(Variant::INT, "_process_custom_fx", PropertyInfo(Variant::OBJECT, "char_fx", PROPERTY_HINT_RESOURCE_TYPE, "CustomFXChar")));
+
 	ADD_GROUP("BBCode", "bbcode_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bbcode_enabled"), "set_use_bbcode", "is_using_bbcode");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "bbcode_text", PROPERTY_HINT_MULTILINE_TEXT), "set_bbcode", "get_bbcode");
@@ -2319,11 +2616,18 @@ void RichTextLabel::_bind_methods() {
 	BIND_ENUM_CONSTANT(ITEM_INDENT);
 	BIND_ENUM_CONSTANT(ITEM_LIST);
 	BIND_ENUM_CONSTANT(ITEM_TABLE);
+	BIND_ENUM_CONSTANT(ITEM_FADE);
+	BIND_ENUM_CONSTANT(ITEM_SHAKE);
+	BIND_ENUM_CONSTANT(ITEM_WAVE);
+	BIND_ENUM_CONSTANT(ITEM_TORNADO);
+	BIND_ENUM_CONSTANT(ITEM_RAINBOW);
+	BIND_ENUM_CONSTANT(ITEM_CUSTOMFX);
 	BIND_ENUM_CONSTANT(ITEM_META);
+	BIND_ENUM_CONSTANT(FX_PROCESS_SUCCESS);
+	BIND_ENUM_CONSTANT(FX_PROCESS_ERROR);
 }
 
 void RichTextLabel::set_visible_characters(int p_visible) {
-
 	visible_characters = p_visible;
 	update();
 }
@@ -2353,6 +2657,77 @@ Size2 RichTextLabel::get_minimum_size() const {
 	}
 
 	return Size2();
+}
+
+bool RichTextLabel::_parse_custom_fx_internal(String identifier, Vector<String> expressions, Dictionary environment) {
+	bool val = false;
+	if (get_script_instance()) {
+		for (int i = 0; i < expressions.size(); i++) {
+			Array a = parse_expression_for_values(expressions[i]);
+			if (a.size() >= 2) {
+				environment[a[0]] = a[1];
+			}
+		}
+
+		val = get_script_instance()->call("_parse_custom_fx", identifier, environment);
+	}
+	return val;
+}
+
+RichTextLabel::CustomFXStatus RichTextLabel::_process_custom_fx_internal(Ref<RichTextLabel::CustomFXChar> c) {
+	Variant v = CustomFXStatus::FX_PROCESS_SUCCESS;
+	if (get_script_instance()) {
+		v = get_script_instance()->call("_process_custom_fx", c);
+		if (v.get_type() != Variant::INT) {
+			v = CustomFXStatus::FX_PROCESS_ERROR;
+		}
+	}
+	return (CustomFXStatus)(int)v;
+}
+
+Array RichTextLabel::parse_expression_for_values(String expression) {
+	Array a = Array();
+	Vector<String> parts = expression.split("=", true);
+	a.append(parts[0]);
+	if (parts.size() < 2) {
+		return a;
+	}
+
+	RegEx color = RegEx();
+	color.compile("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
+	RegEx nodepath = RegEx();
+	nodepath.compile("^\\$");
+	RegEx boolean = RegEx();
+	boolean.compile("^(true|false)$");
+	RegEx decimal = RegEx();
+	decimal.compile("^-?^.?\\d+(\\.\\d+?)?$");
+	RegEx numerical = RegEx();
+	numerical.compile("^\\d+$");
+
+	for (int i = 1; i < parts.size(); i++) {
+		if (!color.search(parts[i]).is_null()) {
+			a.append(Color::html(parts[i]));
+		} else if (!nodepath.search(parts[i]).is_null()) {
+			if (parts[i].begins_with("$")) {
+				String path = parts[i].substr(1, parts[i].length());
+				a.append(NodePath(path));
+			}
+		} else if (!boolean.search(parts[i]).is_null()) {
+			if (parts[i] == "true") {
+				a.append(true);
+			} else if (parts[i] == "false") {
+				a.append(false);
+			}
+		} else if (!decimal.search(parts[i]).is_null()) {
+			a.append(parts[i].to_double());
+		} else if (!numerical.search(parts[i]).is_null()) {
+			a.append(parts[i].to_int());
+		} else {
+			a.append(parts[i]);
+		}
+	}
+
+	return a;
 }
 
 RichTextLabel::RichTextLabel() {
@@ -2405,4 +2780,49 @@ RichTextLabel::RichTextLabel() {
 
 RichTextLabel::~RichTextLabel() {
 	memdelete(main);
+}
+
+void RichTextLabel::CustomFXChar::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_identity"), &CustomFXChar::get_identity);
+	ClassDB::bind_method(D_METHOD("set_identity", "id"), &CustomFXChar::set_identity);
+
+	ClassDB::bind_method(D_METHOD("get_relative_index"), &CustomFXChar::get_relative_index);
+	ClassDB::bind_method(D_METHOD("set_relative_index", "i"), &CustomFXChar::set_relative_index);
+
+	ClassDB::bind_method(D_METHOD("get_absolute_index"), &CustomFXChar::get_absolute_index);
+	ClassDB::bind_method(D_METHOD("set_absolute_index", "i"), &CustomFXChar::set_absolute_index);
+
+	ClassDB::bind_method(D_METHOD("get_elapsed_time"), &CustomFXChar::get_elapsed_time);
+	ClassDB::bind_method(D_METHOD("set_elapsed_time", "t"), &CustomFXChar::set_elapsed_time);
+
+	ClassDB::bind_method(D_METHOD("is_visible"), &CustomFXChar::is_visible);
+	ClassDB::bind_method(D_METHOD("set_visibility", "vis"), &CustomFXChar::set_visibility);
+
+	ClassDB::bind_method(D_METHOD("get_offset"), &CustomFXChar::get_offset);
+	ClassDB::bind_method(D_METHOD("set_offset", "off"), &CustomFXChar::set_offset);
+
+	ClassDB::bind_method(D_METHOD("get_color"), &CustomFXChar::get_color);
+	ClassDB::bind_method(D_METHOD("set_color", "c"), &CustomFXChar::set_color);
+
+	ClassDB::bind_method(D_METHOD("get_environment"), &CustomFXChar::get_environment);
+	ClassDB::bind_method(D_METHOD("set_environment", "d"), &CustomFXChar::set_environment);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "identity"), "set_identity", "get_identity");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "relative_index"), "set_relative_index", "get_relative_index");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "absolute_index"), "set_absolute_index", "get_absolute_index");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "elapsed_time"), "set_elapsed_time", "get_elapsed_time");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "visible"), "set_visibility", "is_visible");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "env"), "set_environment", "get_environment");
+}
+
+RichTextLabel::CustomFXChar::CustomFXChar() {
+	cfx = nullptr;
+	relative_index = 0;
+	absolute_index = 0;
+	visibility = true;
+	offset = Point2();
+	color = Color();
+	character = 0;
 }

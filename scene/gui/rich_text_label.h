@@ -67,7 +67,18 @@ public:
 		ITEM_INDENT,
 		ITEM_LIST,
 		ITEM_TABLE,
-		ITEM_META
+		ITEM_FADE,
+		ITEM_SHAKE,
+		ITEM_WAVE,
+		ITEM_TORNADO,
+		ITEM_RAINBOW,
+		ITEM_META,
+		ITEM_CUSTOMFX
+	};
+
+	enum CustomFXStatus {
+		FX_PROCESS_SUCCESS,
+		FX_PROCESS_ERROR = -1
 	};
 
 protected:
@@ -214,6 +225,137 @@ private:
 		ItemTable() { type = ITEM_TABLE; }
 	};
 
+	struct ItemFade : public Item {
+		int startingIndex;
+		int length;
+
+		ItemFade() { type = ITEM_FADE; }
+	};
+
+	struct ItemFX : public Item {
+		float elapsedTime;
+
+		ItemFX() {
+			elapsedTime = 0.0f;
+		}
+	};
+
+	struct ItemShake : public ItemFX {
+		int strength;
+		float rate;
+		uint64_t _current_rng;
+		uint64_t _previous_rng;
+
+		ItemShake() {
+			strength = 0;
+			rate = 0.0f;
+			_current_rng = 0;
+			type = ITEM_SHAKE;
+		}
+
+		void reroll_random() {
+			_previous_rng = _current_rng;
+			_current_rng = Math::rand();
+		}
+
+		uint64_t offset_random(int index) {
+			return (_current_rng >> (index % 64)) |
+				   (_current_rng << (64 - (index % 64)));
+		}
+
+		uint64_t offset_previous_random(int index) {
+			return (_previous_rng >> (index % 64)) |
+				   (_previous_rng << (64 - (index % 64)));
+		}
+	};
+
+	struct ItemWave : public ItemFX {
+		float frequency;
+		float amplitude;
+
+		ItemWave() {
+			frequency = 1.0f;
+			amplitude = 1.0f;
+			type = ITEM_WAVE;
+		}
+	};
+
+	struct ItemTornado : public ItemFX {
+		float radius;
+		float frequency;
+
+		ItemTornado() {
+			radius = 1.0f;
+			frequency = 1.0f;
+			type = ITEM_TORNADO;
+		}
+	};
+
+	struct ItemRainbow : public ItemFX {
+		float saturation;
+		float value;
+		float frequency;
+
+		ItemRainbow() {
+			saturation = 0.8f;
+			value = 0.8f;
+			frequency = 1.0f;
+			type = ITEM_RAINBOW;
+		}
+	};
+
+	struct ItemCustomFX : public ItemFX {
+		String identifier;
+		Dictionary environment;
+
+		ItemCustomFX() {
+			identifier = "";
+			environment = Dictionary();
+			type = ITEM_CUSTOMFX;
+		}
+
+		virtual ~ItemCustomFX() {
+			_clear_children();
+			environment.clear();
+		}
+	};
+
+	class CustomFXChar : public Reference {
+		GDCLASS(CustomFXChar, Reference);
+
+	protected:
+		static void _bind_methods();
+
+	public:
+		RichTextLabel::ItemCustomFX *cfx;
+		uint64_t relative_index;
+		uint64_t absolute_index;
+		bool visibility;
+		Point2 offset;
+		Color color;
+		CharType character;
+
+		CustomFXChar();
+		String get_identity() { return cfx->identifier; }
+		void set_identity(String id) { cfx->identifier = id; }
+		uint64_t get_relative_index() { return relative_index; }
+		void set_relative_index(uint64_t i) { relative_index = i; }
+		uint64_t get_absolute_index() { return absolute_index; }
+		void set_absolute_index(uint64_t i) { absolute_index = i; }
+		float get_elapsed_time() { return cfx->elapsedTime; }
+		void set_elapsed_time(float time) { cfx->elapsedTime = time; }
+		bool is_visible() { return visibility; }
+		void set_visibility(bool v) { visibility = v; }
+		Point2 get_offset() { return offset; }
+		void set_offset(Point2 o) { offset = o; }
+		Color get_color() { return color; }
+		void set_color(Color c) { color = c; }
+		char get_character() { return character; }
+		void set_character(char c) { character = c; }
+		Dictionary get_environment() { return cfx->environment; }
+		void set_environment(Dictionary d) { cfx->environment = d; }
+	};
+
 	ItemFrame *main;
 	Item *current;
 	ItemFrame *current_frame;
@@ -287,8 +429,36 @@ private:
 	bool _find_strikethrough(Item *p_item);
 	bool _find_meta(Item *p_item, Variant *r_meta, ItemMeta **r_item = NULL);
 	bool _find_layout_subitem(Item *from, Item *to);
+	bool _find_by_type(Item *p_item, ItemType type);
+	template <typename T>
+	T *_fetch_by_type(Item *p_item, ItemType type) {
+		Item *item = p_item;
+		T *result = NULL;
+		while (item) {
+			if (item->type == type) {
+				result = dynamic_cast<T *>(item);
+				if (result)
+					return result;
+			}
+			item = item->parent;
+		}
+
+		return result;
+	};
+	template <typename T>
+	void _fetch_item_stack(Item *p_item, Vector<T *> &stack) {
+		Item *item = p_item;
+		while (item) {
+			T *found = dynamic_cast<T *>(item);
+			if (found) {
+				stack.push_back(found);
+			}
+			item = item->parent;
+		}
+	}
 
 	void _update_scroll();
+	void _update_fx(ItemFrame *p_frame, float deltaTime);
 	void _scroll_changed(double);
 
 	void _gui_input(Ref<InputEvent> p_event);
@@ -296,6 +466,9 @@ private:
 	Item *_get_prev_item(Item *p_item, bool p_free = false);
 
 	Rect2 _get_text_rect();
+	virtual bool _parse_custom_fx_internal(String identifier, Vector<String> expressions, Dictionary environment);
+	virtual CustomFXStatus _process_custom_fx_internal(Ref<CustomFXChar> c);
+	virtual Array parse_expression_for_values(String expression);
 
 	bool use_bbcode;
 	String bbcode;
@@ -322,6 +495,12 @@ public:
 	void push_list(ListType p_list);
 	void push_meta(const Variant &p_meta);
 	void push_table(int p_columns);
+	void push_fade(int startIndex, int length);
+	void push_shake(int level, float rate);
+	void push_wave(float frequency, float amplitude);
+	void push_tornado(float frequency, float radius);
+	void push_rainbow(float saturation, float value, float frequency);
+	void push_customfx(String identifier, Dictionary environment);
 	void set_table_column_expand(int p_column, bool p_expand, int p_ratio = 1);
 	int get_current_table_column() const;
 	void push_cell();
@@ -390,5 +569,6 @@ public:
 VARIANT_ENUM_CAST(RichTextLabel::Align);
 VARIANT_ENUM_CAST(RichTextLabel::ListType);
 VARIANT_ENUM_CAST(RichTextLabel::ItemType);
+VARIANT_ENUM_CAST(RichTextLabel::CustomFXStatus);
 
 #endif // RICH_TEXT_LABEL_H
