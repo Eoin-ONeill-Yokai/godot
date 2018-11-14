@@ -33,6 +33,58 @@
 
 #include "scene/gui/scroll_bar.h"
 
+class RichTextEffect : public Resource {
+	GDCLASS(RichTextEffect, Resource);
+	OBJ_SAVE_TYPE(RichTextEffect);
+	RES_BASE_EXTENSION("rtfx");
+
+protected:
+	static void _bind_methods();
+
+public:
+	Variant get_bbcode() const;
+	bool _process_effect_impl(Ref<class CharFXTransform> cfx);
+
+	RichTextEffect();
+};
+
+class CharFXTransform : public Reference {
+	GDCLASS(CharFXTransform, Reference);
+
+protected:
+	static void _bind_methods();
+
+public:
+	uint64_t relative_index;
+	uint64_t absolute_index;
+	bool visibility;
+	Point2 offset;
+	Color color;
+	CharType character;
+	float elapsedTime;
+	Dictionary environment;
+
+	CharFXTransform();
+	uint64_t get_relative_index() { return relative_index; }
+	void set_relative_index(uint64_t i) { relative_index = i; }
+	uint64_t get_absolute_index() { return absolute_index; }
+	void set_absolute_index(uint64_t i) { absolute_index = i; }
+	float get_elapsed_time() { return elapsedTime; }
+	void set_elapsed_time(float time) { elapsedTime = time; }
+	bool is_visible() { return visibility; }
+	void set_visibility(bool v) { visibility = v; }
+	Point2 get_offset() { return offset; }
+	void set_offset(Point2 o) { offset = o; }
+	Color get_color() { return color; }
+	void set_color(Color c) { color = c; }
+	int get_character() { return (int)character; }
+	void set_character(int c) { character = (CharType)c; }
+	Dictionary get_environment() { return environment; }
+	void set_environment(Dictionary d) { environment = d; }
+
+	Variant get_or(String key, Variant default_value);
+};
+
 class RichTextLabel : public Control {
 
 	GDCLASS(RichTextLabel, Control);
@@ -74,11 +126,6 @@ public:
 		ITEM_RAINBOW,
 		ITEM_META,
 		ITEM_CUSTOMFX
-	};
-
-	enum CustomFXStatus {
-		FX_PROCESS_SUCCESS,
-		FX_PROCESS_ERROR = -1
 	};
 
 protected:
@@ -320,42 +367,6 @@ private:
 		}
 	};
 
-	class CustomFXChar : public Reference {
-		GDCLASS(CustomFXChar, Reference);
-
-	protected:
-		static void _bind_methods();
-
-	public:
-		RichTextLabel::ItemCustomFX *cfx;
-		uint64_t relative_index;
-		uint64_t absolute_index;
-		bool visibility;
-		Point2 offset;
-		Color color;
-		CharType character;
-
-		CustomFXChar();
-		String get_identity() { return cfx->identifier; }
-		void set_identity(String id) { cfx->identifier = id; }
-		uint64_t get_relative_index() { return relative_index; }
-		void set_relative_index(uint64_t i) { relative_index = i; }
-		uint64_t get_absolute_index() { return absolute_index; }
-		void set_absolute_index(uint64_t i) { absolute_index = i; }
-		float get_elapsed_time() { return cfx->elapsedTime; }
-		void set_elapsed_time(float time) { cfx->elapsedTime = time; }
-		bool is_visible() { return visibility; }
-		void set_visibility(bool v) { visibility = v; }
-		Point2 get_offset() { return offset; }
-		void set_offset(Point2 o) { offset = o; }
-		Color get_color() { return color; }
-		void set_color(Color c) { color = c; }
-		char get_character() { return character; }
-		void set_character(char c) { character = c; }
-		Dictionary get_environment() { return cfx->environment; }
-		void set_environment(Dictionary d) { cfx->environment = d; }
-	};
-
 	ItemFrame *main;
 	Item *current;
 	ItemFrame *current_frame;
@@ -381,6 +392,8 @@ private:
 	ItemMeta *meta_hovering;
 	Variant current_meta;
 
+	Vector<Ref<RichTextEffect> > customEffects;
+
 	void _invalidate_current_line(ItemFrame *p_frame);
 	void _validate_line_caches(ItemFrame *p_frame);
 
@@ -388,7 +401,6 @@ private:
 	void _remove_item(Item *p_item, const int p_line, const int p_subitem_line);
 
 	struct ProcessState {
-
 		int line_width;
 	};
 
@@ -466,9 +478,8 @@ private:
 	Item *_get_prev_item(Item *p_item, bool p_free = false);
 
 	Rect2 _get_text_rect();
-	virtual bool _parse_custom_fx_internal(String identifier, Vector<String> expressions, Dictionary environment);
-	virtual CustomFXStatus _process_custom_fx_internal(Ref<CustomFXChar> c);
-	virtual Array parse_expression_for_values(String expression);
+	Ref<RichTextEffect> _get_custom_effect_by_code(String bbcode_identifier);
+	virtual Dictionary parse_expressions_for_values(Vector<String> expressions);
 
 	bool use_bbcode;
 	String bbcode;
@@ -559,6 +570,11 @@ public:
 	void set_percent_visible(float p_percent);
 	float get_percent_visible() const;
 
+	void set_effects(const Vector<Variant> &effects);
+	Vector<Variant> get_effects();
+
+	void install_effect(const Variant effect);
+
 	void set_fixed_size_to_width(int p_width);
 	virtual Size2 get_minimum_size() const;
 
@@ -569,6 +585,5 @@ public:
 VARIANT_ENUM_CAST(RichTextLabel::Align);
 VARIANT_ENUM_CAST(RichTextLabel::ListType);
 VARIANT_ENUM_CAST(RichTextLabel::ItemType);
-VARIANT_ENUM_CAST(RichTextLabel::CustomFXStatus);
 
 #endif // RICH_TEXT_LABEL_H

@@ -1,4 +1,4 @@
-﻿/*************************************************************************/
+/*************************************************************************/
 /*  rich_text_label.cpp                                                  */
 /*************************************************************************/
 /*                       This file is part of:                           */
@@ -38,6 +38,93 @@
 #ifdef TOOLS_ENABLED
 #include "editor/editor_scale.h"
 #endif
+
+void RichTextEffect::_bind_methods() {
+	BIND_VMETHOD(MethodInfo(Variant::INT, "_process_custom_fx", PropertyInfo(Variant::OBJECT, "char_fx", PROPERTY_HINT_RESOURCE_TYPE, "CustomFXChar")));
+}
+
+Variant RichTextEffect::get_bbcode() const {
+	Variant r;
+	if (get_script_instance()) {
+		if (!get_script_instance()->get("bbcode", r)) {
+			String path = get_script_instance()->get_script()->get_path();
+			r = path.get_file().get_basename();
+		}
+	}
+	return r;
+}
+
+bool RichTextEffect::_process_effect_impl(Ref<CharFXTransform> cfx) {
+	Variant v = false;
+	if (get_script_instance()) {
+		v = get_script_instance()->call("_process_custom_fx", cfx);
+		if (v.get_type() != Variant::BOOL) {
+			v = false;
+		}
+	}
+	return v;
+}
+
+RichTextEffect::RichTextEffect() {
+}
+
+void CharFXTransform::_bind_methods() {
+
+	ClassDB::bind_method(D_METHOD("get_relative_index"), &CharFXTransform::get_relative_index);
+	ClassDB::bind_method(D_METHOD("set_relative_index", "i"), &CharFXTransform::set_relative_index);
+
+	ClassDB::bind_method(D_METHOD("get_absolute_index"), &CharFXTransform::get_absolute_index);
+	ClassDB::bind_method(D_METHOD("set_absolute_index", "i"), &CharFXTransform::set_absolute_index);
+
+	ClassDB::bind_method(D_METHOD("get_elapsed_time"), &CharFXTransform::get_elapsed_time);
+	ClassDB::bind_method(D_METHOD("set_elapsed_time", "t"), &CharFXTransform::set_elapsed_time);
+
+	ClassDB::bind_method(D_METHOD("is_visible"), &CharFXTransform::is_visible);
+	ClassDB::bind_method(D_METHOD("set_visibility", "vis"), &CharFXTransform::set_visibility);
+
+	ClassDB::bind_method(D_METHOD("get_offset"), &CharFXTransform::get_offset);
+	ClassDB::bind_method(D_METHOD("set_offset", "off"), &CharFXTransform::set_offset);
+
+	ClassDB::bind_method(D_METHOD("get_color"), &CharFXTransform::get_color);
+	ClassDB::bind_method(D_METHOD("set_color", "c"), &CharFXTransform::set_color);
+
+	ClassDB::bind_method(D_METHOD("get_environment"), &CharFXTransform::get_environment);
+	ClassDB::bind_method(D_METHOD("set_environment", "d"), &CharFXTransform::set_environment);
+
+	ClassDB::bind_method(D_METHOD("get_character"), &CharFXTransform::get_character);
+	ClassDB::bind_method(D_METHOD("set_character"), &CharFXTransform::set_character);
+
+	ClassDB::bind_method(D_METHOD("get_or", "key", "default_value"), &CharFXTransform::get_or);
+
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "relative_index"), "set_relative_index", "get_relative_index");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "absolute_index"), "set_absolute_index", "get_absolute_index");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "elapsed_time"), "set_elapsed_time", "get_elapsed_time");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "visible"), "set_visibility", "is_visible");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "env"), "set_environment", "get_environment");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "character"), "set_character", "get_character");
+}
+
+Variant CharFXTransform::get_or(String key, Variant default_value) {
+	if (!this->environment.has(key))
+		return default_value;
+
+	Variant r = environment[key];
+	if (r.get_type() != default_value.get_type())
+		return default_value;
+
+	return r;
+}
+
+CharFXTransform::CharFXTransform() {
+	relative_index = 0;
+	absolute_index = 0;
+	visibility = true;
+	offset = Point2();
+	color = Color();
+	character = 0;
+}
 
 RichTextLabel::Item *RichTextLabel::_get_next_item(Item *p_item, bool p_free) {
 
@@ -344,7 +431,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 				Color font_color_shadow;
 				bool underline = false;
 				bool strikethrough = false;
-				ItemFade *fade = nullptr;
+				ItemFade *fade = NULL;
 				int it_char_start = p_char_count;
 
 				Vector<ItemFX *> fxStack = Vector<ItemFX *>();
@@ -359,7 +446,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 						strikethrough = true;
 					}
 
-					fade = _fetch_by_type<ItemFade>(text, ItemType::ITEM_FADE);
+					fade = _fetch_by_type<ItemFade>(text, ITEM_FADE);
 					_fetch_item_stack<ItemFX>(text, fxStack);
 
 				} else if (p_mode == PROCESS_CACHE) {
@@ -441,6 +528,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 								bool selected = false;
 								Color fxcolor = Color(color);
 								Point2 fxOffset;
+								CharType fxchar = c[i];
 
 								if (selection.active) {
 
@@ -466,34 +554,40 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 																				 fadedVisibility > 0.0f);
 
 								for (int j = 0; j < fxStack.size(); j++) {
-									ItemCustomFX *customfx = dynamic_cast<ItemCustomFX *>(fxStack[j]);
-									ItemShake *shake = dynamic_cast<ItemShake *>(fxStack[j]);
-									ItemWave *wave = dynamic_cast<ItemWave *>(fxStack[j]);
-									ItemTornado *tornado = dynamic_cast<ItemTornado *>(fxStack[j]);
-									ItemRainbow *rainbow = dynamic_cast<ItemRainbow *>(fxStack[j]);
+									ItemCustomFX *item_custom = dynamic_cast<ItemCustomFX *>(fxStack[j]);
+									ItemShake *item_shake = dynamic_cast<ItemShake *>(fxStack[j]);
+									ItemWave *item_wave = dynamic_cast<ItemWave *>(fxStack[j]);
+									ItemTornado *item_tornado = dynamic_cast<ItemTornado *>(fxStack[j]);
+									ItemRainbow *item_rainbow = dynamic_cast<ItemRainbow *>(fxStack[j]);
 
-									if (customfx && custom_fx_ok) {
-										Ref<CustomFXChar> cfx = Ref<CustomFXChar>(memnew(CustomFXChar));
-										cfx->cfx = customfx;
-										cfx->relative_index = c_item_offset;
-										cfx->absolute_index = p_char_count;
-										cfx->visibility = visible;
-										cfx->offset = fxOffset;
-										cfx->color = fxcolor;
-										cfx->character = c[i];
+									if (item_custom && custom_fx_ok) {
+										Ref<CharFXTransform> charfx = Ref<CharFXTransform>(memnew(CharFXTransform));
+										Ref<RichTextEffect> custom_effect = _get_custom_effect_by_code(item_custom->identifier);
+										if (!custom_effect.is_null()) {
+											charfx->elapsedTime = item_custom->elapsedTime;
+											charfx->environment = item_custom->environment;
+											charfx->relative_index = c_item_offset;
+											charfx->absolute_index = p_char_count;
+											charfx->visibility = visible;
+											charfx->offset = fxOffset;
+											charfx->color = fxcolor;
+											charfx->character = fxchar;
 
-										CustomFXStatus status = _process_custom_fx_internal(cfx);
-										custom_fx_ok = (status != CustomFXStatus::FX_PROCESS_ERROR);
+											bool effect_status = custom_effect->_process_effect_impl(charfx);
+											custom_fx_ok = effect_status;
 
-										fxOffset += cfx->offset;
-										fxcolor = cfx->color;
-										visible &= cfx->visibility;
-									} else if (shake) {
-										uint64_t char_current_rand = shake->offset_random(c_item_offset);
-										uint64_t char_previous_rand = shake->offset_previous_random(c_item_offset);
-										double current_offset = Math::range_lerp(char_current_rand % RAND_MAX, 0, RAND_MAX, 0.0f, 2.f * (float)Math_PI);
-										double previous_offset = Math::range_lerp(char_previous_rand % RAND_MAX, 0, RAND_MAX, 0.0f, 2.f * (float)Math_PI);
-										double nTime = (double)(shake->elapsedTime / (0.5f / shake->rate));
+											fxOffset += charfx->offset;
+											fxcolor = charfx->color;
+											visible &= charfx->visibility;
+											fxchar = charfx->character;
+										}
+									} else if (item_shake) {
+										uint64_t char_current_rand = item_shake->offset_random(c_item_offset);
+										uint64_t char_previous_rand = item_shake->offset_previous_random(c_item_offset);
+										uint64_t max_rand = 2147483647;
+										double current_offset = Math::range_lerp(char_current_rand % max_rand, 0, max_rand, 0.0f, 2.f * (float)Math_PI);
+										double previous_offset = Math::range_lerp(char_previous_rand % max_rand, 0, max_rand, 0.0f, 2.f * (float)Math_PI);
+										double nTime = (double)(item_shake->elapsedTime / (0.5f / item_shake->rate));
 										nTime = (nTime > 1.0) ? 1.0 : nTime;
 										fxOffset += Point2(Math::lerp(Math::sin(previous_offset),
 																   Math::sin(current_offset),
@@ -501,18 +595,18 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 															Math::lerp(Math::cos(previous_offset),
 																	Math::cos(current_offset),
 																	nTime)) *
-													(float)shake->strength / 10.0f;
-									} else if (wave) {
-										double value = Math::sin(wave->frequency * wave->elapsedTime + ((p_ofs.x + pofs) / 50)) * (wave->amplitude / 10.0f);
+													(float)item_shake->strength / 10.0f;
+									} else if (item_wave) {
+										double value = Math::sin(item_wave->frequency * item_wave->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_wave->amplitude / 10.0f);
 										fxOffset += Point2(0, 1) * value;
-									} else if (tornado) {
-										double x = Math::sin(tornado->frequency * tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (tornado->radius);
-										double y = Math::cos(tornado->frequency * tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (tornado->radius);
-										fxOffset += Point2(x, y);
-									} else if (rainbow) {
-										fxcolor = fxcolor.from_hsv(rainbow->frequency * (rainbow->elapsedTime + ((p_ofs.x + pofs) / 50)),
-												rainbow->saturation,
-												rainbow->value,
+									} else if (item_tornado) {
+										double torn_x = Math::sin(item_tornado->frequency * item_tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
+										double torn_y = Math::cos(item_tornado->frequency * item_tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
+										fxOffset += Point2(torn_x, torn_y);
+									} else if (item_rainbow) {
+										fxcolor = fxcolor.from_hsv(item_rainbow->frequency * (item_rainbow->elapsedTime + ((p_ofs.x + pofs) / 50)),
+												item_rainbow->saturation,
+												item_rainbow->value,
 												fxcolor.a);
 									}
 								}
@@ -545,7 +639,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 									if (selected) {
 										drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent), c[i], c[i + 1], override_selected_font_color ? selection_fg : fxcolor);
 									} else {
-										cw = drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent) + fxOffset, c[i], c[i + 1], fxcolor);
+										cw = drawer.draw_char(ci, p_ofs + Point2(align_ofs + pofs, y + lh - line_descent) + fxOffset, fxchar, c[i + 1], fxcolor);
 									}
 								}
 
@@ -975,6 +1069,10 @@ void RichTextLabel::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			float dt = get_process_delta_time();
+
+			for (int i = 0; i < customEffects.size(); i++) {
+			}
+
 			_update_fx(main, dt);
 			update();
 		}
@@ -1950,9 +2048,8 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 				indent_level--;
 
 			if (!tag_ok) {
-
-				add_text("[");
-				pos++;
+				add_text("[" + tag);
+				pos = brk_end;
 				continue;
 			}
 
@@ -2191,8 +2288,8 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 			set_process(true);
 		} else if (tag.begins_with("wave")) {
 			Vector<String> tags = tag.split(" ", false);
-			float amplitude = 10.0f;
-			float period = 1.0f;
+			float amplitude = 20.0f;
+			float period = 5.0f;
 
 			if (tags.size() > 1) {
 				tags.remove(0);
@@ -2270,9 +2367,10 @@ Error RichTextLabel::append_bbcode(const String &p_bbcode) {
 			} else {
 				String identifier = expr[0];
 				expr.remove(0);
-				Dictionary properties = Dictionary();
+				Dictionary properties = parse_expressions_for_values(expr);
+				Ref<RichTextEffect> effect = _get_custom_effect_by_code(identifier);
 
-				if (_parse_custom_fx_internal(identifier, expr, properties)) { //todo: replace with dictionary check for command
+				if (!effect.is_null()) {
 					push_customfx(identifier, properties);
 					pos = brk_end + 1;
 					tag_stack.push_front(identifier);
@@ -2490,6 +2588,34 @@ float RichTextLabel::get_percent_visible() const {
 	return percent_visible;
 }
 
+void RichTextLabel::set_effects(const Vector<Variant> &effects) {
+	customEffects.clear();
+	for (int i = 0; i < effects.size(); i++) {
+		Ref<RichTextEffect> effect = effects[i];
+		customEffects.push_back(effect);
+	}
+
+	parse_bbcode(bbcode);
+}
+
+Vector<Variant> RichTextLabel::get_effects() {
+	Vector<Variant> r;
+	for (int i = 0; i < customEffects.size(); i++) {
+		r.push_back(customEffects[i].get_ref_ptr());
+	}
+	return r;
+}
+
+void RichTextLabel::install_effect(const Variant effect) {
+	Ref<RichTextEffect> rteffect;
+	rteffect = effect;
+
+	if (rteffect.is_valid()) {
+		customEffects.push_back(effect);
+		parse_bbcode(bbcode);
+	}
+}
+
 int RichTextLabel::get_content_height() {
 	int total_height = 0;
 	if (main->lines.size())
@@ -2566,13 +2692,11 @@ void RichTextLabel::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_content_height"), &RichTextLabel::get_content_height);
 
-	ClassDB::bind_method(D_METHOD("_parse_custom_fx_internal", "identifier", "expressions", "environment"), &RichTextLabel::_parse_custom_fx_internal);
-	ClassDB::bind_method(D_METHOD("parse_expression_for_values", "expression"), &RichTextLabel::parse_expression_for_values);
+	ClassDB::bind_method(D_METHOD("parse_expressions_for_values", "expressions"), &RichTextLabel::parse_expressions_for_values);
 
-	BIND_VMETHOD(MethodInfo(Variant::BOOL, "_parse_custom_fx", PropertyInfo(Variant::STRING, "identifier"),
-			PropertyInfo(Variant::DICTIONARY, "environment")));
-
-	BIND_VMETHOD(MethodInfo(Variant::INT, "_process_custom_fx", PropertyInfo(Variant::OBJECT, "char_fx", PROPERTY_HINT_RESOURCE_TYPE, "CustomFXChar")));
+	ClassDB::bind_method(D_METHOD("set_effects", "effects"), &RichTextLabel::set_effects);
+	ClassDB::bind_method(D_METHOD("get_effects"), &RichTextLabel::get_effects);
+	ClassDB::bind_method(D_METHOD("install_effect", "effect"), &RichTextLabel::install_effect);
 
 	ADD_GROUP("BBCode", "bbcode_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bbcode_enabled"), "set_use_bbcode", "is_using_bbcode");
@@ -2590,6 +2714,8 @@ void RichTextLabel::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "selection_enabled"), "set_selection_enabled", "is_selection_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "override_selected_font_color"), "set_override_selected_font_color", "is_overriding_selected_font_color");
+
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "custom_effects", PROPERTY_HINT_RESOURCE_TYPE, "RichTextEffect"), "set_effects", "get_effects");
 
 	ADD_SIGNAL(MethodInfo("meta_clicked", PropertyInfo(Variant::NIL, "meta", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT)));
 	ADD_SIGNAL(MethodInfo("meta_hover_started", PropertyInfo(Variant::NIL, "meta", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT)));
@@ -2623,8 +2749,6 @@ void RichTextLabel::_bind_methods() {
 	BIND_ENUM_CONSTANT(ITEM_RAINBOW);
 	BIND_ENUM_CONSTANT(ITEM_CUSTOMFX);
 	BIND_ENUM_CONSTANT(ITEM_META);
-	BIND_ENUM_CONSTANT(FX_PROCESS_SUCCESS);
-	BIND_ENUM_CONSTANT(FX_PROCESS_ERROR);
 }
 
 void RichTextLabel::set_visible_characters(int p_visible) {
@@ -2659,75 +2783,75 @@ Size2 RichTextLabel::get_minimum_size() const {
 	return Size2();
 }
 
-bool RichTextLabel::_parse_custom_fx_internal(String identifier, Vector<String> expressions, Dictionary environment) {
-	bool val = false;
-	if (get_script_instance()) {
-		for (int i = 0; i < expressions.size(); i++) {
-			Array a = parse_expression_for_values(expressions[i]);
-			if (a.size() >= 2) {
-				environment[a[0]] = a[1];
-			}
-		}
+Ref<RichTextEffect> RichTextLabel::_get_custom_effect_by_code(String bbcode_identifier) {
+	Ref<RichTextEffect> r;
+	for (int i = 0; i < customEffects.size(); i++) {
+		if (!customEffects[i].is_valid())
+			continue;
 
-		val = get_script_instance()->call("_parse_custom_fx", identifier, environment);
+		if (customEffects[i]->get_bbcode() == bbcode_identifier) {
+			r = customEffects[i];
+		}
 	}
-	return val;
+
+	return r;
 }
 
-RichTextLabel::CustomFXStatus RichTextLabel::_process_custom_fx_internal(Ref<RichTextLabel::CustomFXChar> c) {
-	Variant v = CustomFXStatus::FX_PROCESS_SUCCESS;
-	if (get_script_instance()) {
-		v = get_script_instance()->call("_process_custom_fx", c);
-		if (v.get_type() != Variant::INT) {
-			v = CustomFXStatus::FX_PROCESS_ERROR;
+Dictionary RichTextLabel::parse_expressions_for_values(Vector<String> expressions) {
+	Dictionary d = Dictionary();
+	for (int i = 0; i < expressions.size(); i++) {
+		String expression = expressions[i];
+
+		Array a = Array();
+		Vector<String> parts = expression.split("=", true);
+		String key = parts[0];
+		if (parts.size() != 2) {
+			return d;
+		}
+
+		Vector<String> values = parts[1].split(",", false);
+
+		RegEx color = RegEx();
+		color.compile("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
+		RegEx nodepath = RegEx();
+		nodepath.compile("^\\$");
+		RegEx boolean = RegEx();
+		boolean.compile("^(true|false)$");
+		RegEx decimal = RegEx();
+		decimal.compile("^-?^.?\\d+(\\.\\d+?)?$");
+		RegEx numerical = RegEx();
+		numerical.compile("^\\d+$");
+
+		for (int j = 0; j < values.size(); j++) {
+			if (!color.search(values[j]).is_null()) {
+				a.append(Color::html(values[j]));
+			} else if (!nodepath.search(values[j]).is_null()) {
+				if (values[j].begins_with("$")) {
+					String v = values[j].substr(1, values[j].length());
+					a.append(NodePath(v));
+				}
+			} else if (!boolean.search(values[j]).is_null()) {
+				if (values[j] == "true") {
+					a.append(true);
+				} else if (values[j] == "false") {
+					a.append(false);
+				}
+			} else if (!decimal.search(values[j]).is_null()) {
+				a.append(values[j].to_double());
+			} else if (!numerical.search(values[j]).is_null()) {
+				a.append(values[j].to_int());
+			} else {
+				a.append(values[j]);
+			}
+		}
+
+		if (values.size() > 1) {
+			d[key] = a;
+		} else if (values.size() == 1) {
+			d[key] = a[0];
 		}
 	}
-	return (CustomFXStatus)(int)v;
-}
-
-Array RichTextLabel::parse_expression_for_values(String expression) {
-	Array a = Array();
-	Vector<String> parts = expression.split("=", true);
-	a.append(parts[0]);
-	if (parts.size() < 2) {
-		return a;
-	}
-
-	RegEx color = RegEx();
-	color.compile("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
-	RegEx nodepath = RegEx();
-	nodepath.compile("^\\$");
-	RegEx boolean = RegEx();
-	boolean.compile("^(true|false)$");
-	RegEx decimal = RegEx();
-	decimal.compile("^-?^.?\\d+(\\.\\d+?)?$");
-	RegEx numerical = RegEx();
-	numerical.compile("^\\d+$");
-
-	for (int i = 1; i < parts.size(); i++) {
-		if (!color.search(parts[i]).is_null()) {
-			a.append(Color::html(parts[i]));
-		} else if (!nodepath.search(parts[i]).is_null()) {
-			if (parts[i].begins_with("$")) {
-				String path = parts[i].substr(1, parts[i].length());
-				a.append(NodePath(path));
-			}
-		} else if (!boolean.search(parts[i]).is_null()) {
-			if (parts[i] == "true") {
-				a.append(true);
-			} else if (parts[i] == "false") {
-				a.append(false);
-			}
-		} else if (!decimal.search(parts[i]).is_null()) {
-			a.append(parts[i].to_double());
-		} else if (!numerical.search(parts[i]).is_null()) {
-			a.append(parts[i].to_int());
-		} else {
-			a.append(parts[i]);
-		}
-	}
-
-	return a;
+	return d;
 }
 
 RichTextLabel::RichTextLabel() {
@@ -2780,49 +2904,4 @@ RichTextLabel::RichTextLabel() {
 
 RichTextLabel::~RichTextLabel() {
 	memdelete(main);
-}
-
-void RichTextLabel::CustomFXChar::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("get_identity"), &CustomFXChar::get_identity);
-	ClassDB::bind_method(D_METHOD("set_identity", "id"), &CustomFXChar::set_identity);
-
-	ClassDB::bind_method(D_METHOD("get_relative_index"), &CustomFXChar::get_relative_index);
-	ClassDB::bind_method(D_METHOD("set_relative_index", "i"), &CustomFXChar::set_relative_index);
-
-	ClassDB::bind_method(D_METHOD("get_absolute_index"), &CustomFXChar::get_absolute_index);
-	ClassDB::bind_method(D_METHOD("set_absolute_index", "i"), &CustomFXChar::set_absolute_index);
-
-	ClassDB::bind_method(D_METHOD("get_elapsed_time"), &CustomFXChar::get_elapsed_time);
-	ClassDB::bind_method(D_METHOD("set_elapsed_time", "t"), &CustomFXChar::set_elapsed_time);
-
-	ClassDB::bind_method(D_METHOD("is_visible"), &CustomFXChar::is_visible);
-	ClassDB::bind_method(D_METHOD("set_visibility", "vis"), &CustomFXChar::set_visibility);
-
-	ClassDB::bind_method(D_METHOD("get_offset"), &CustomFXChar::get_offset);
-	ClassDB::bind_method(D_METHOD("set_offset", "off"), &CustomFXChar::set_offset);
-
-	ClassDB::bind_method(D_METHOD("get_color"), &CustomFXChar::get_color);
-	ClassDB::bind_method(D_METHOD("set_color", "c"), &CustomFXChar::set_color);
-
-	ClassDB::bind_method(D_METHOD("get_environment"), &CustomFXChar::get_environment);
-	ClassDB::bind_method(D_METHOD("set_environment", "d"), &CustomFXChar::set_environment);
-
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "identity"), "set_identity", "get_identity");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "relative_index"), "set_relative_index", "get_relative_index");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "absolute_index"), "set_absolute_index", "get_absolute_index");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "elapsed_time"), "set_elapsed_time", "get_elapsed_time");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "visible"), "set_visibility", "is_visible");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
-	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
-	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "env"), "set_environment", "get_environment");
-}
-
-RichTextLabel::CustomFXChar::CustomFXChar() {
-	cfx = nullptr;
-	relative_index = 0;
-	absolute_index = 0;
-	visibility = true;
-	offset = Point2();
-	color = Color();
-	character = 0;
 }
