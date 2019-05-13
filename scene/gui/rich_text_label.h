@@ -31,59 +31,8 @@
 #ifndef RICH_TEXT_LABEL_H
 #define RICH_TEXT_LABEL_H
 
+#include "rich_text_effect.h"
 #include "scene/gui/scroll_bar.h"
-
-class RichTextEffect : public Resource {
-	GDCLASS(RichTextEffect, Resource);
-	OBJ_SAVE_TYPE(RichTextEffect);
-	RES_BASE_EXTENSION("rtfx");
-
-protected:
-	static void _bind_methods();
-
-public:
-	Variant get_bbcode() const;
-	bool _process_effect_impl(Ref<class CharFXTransform> cfx);
-
-	RichTextEffect();
-};
-
-class CharFXTransform : public Reference {
-	GDCLASS(CharFXTransform, Reference);
-
-protected:
-	static void _bind_methods();
-
-public:
-	uint64_t relative_index;
-	uint64_t absolute_index;
-	bool visibility;
-	Point2 offset;
-	Color color;
-	CharType character;
-	float elapsedTime;
-	Dictionary environment;
-
-	CharFXTransform();
-	uint64_t get_relative_index() { return relative_index; }
-	void set_relative_index(uint64_t i) { relative_index = i; }
-	uint64_t get_absolute_index() { return absolute_index; }
-	void set_absolute_index(uint64_t i) { absolute_index = i; }
-	float get_elapsed_time() { return elapsedTime; }
-	void set_elapsed_time(float time) { elapsedTime = time; }
-	bool is_visible() { return visibility; }
-	void set_visibility(bool v) { visibility = v; }
-	Point2 get_offset() { return offset; }
-	void set_offset(Point2 o) { offset = o; }
-	Color get_color() { return color; }
-	void set_color(Color c) { color = c; }
-	int get_character() { return (int)character; }
-	void set_character(int c) { character = (CharType)c; }
-	Dictionary get_environment() { return environment; }
-	void set_environment(Dictionary d) { environment = d; }
-
-	Variant get_or(String key, Variant default_value);
-};
 
 class RichTextLabel : public Control {
 
