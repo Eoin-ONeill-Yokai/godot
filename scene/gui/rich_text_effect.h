@@ -1,4 +1,3 @@
-
 /*************************************************************************/
 /*  rich_text_effect.h                                                   */
 /*************************************************************************/
@@ -37,14 +36,13 @@
 class RichTextEffect : public Resource {
 	GDCLASS(RichTextEffect, Resource);
 	OBJ_SAVE_TYPE(RichTextEffect);
-	RES_BASE_EXTENSION("textfx");
 
 protected:
 	static void _bind_methods();
 
 public:
 	Variant get_bbcode() const;
-	bool _process_effect_impl(Ref<class CharFXTransform> cfx);
+	bool _process_effect_impl(Ref<class CharFXTransform> p_cfx);
 
 	RichTextEffect();
 };
@@ -67,23 +65,23 @@ public:
 
 	CharFXTransform();
 	uint64_t get_relative_index() { return relative_index; }
-	void set_relative_index(uint64_t i) { relative_index = i; }
+	void set_relative_index(uint64_t p_index) { relative_index = p_index; }
 	uint64_t get_absolute_index() { return absolute_index; }
-	void set_absolute_index(uint64_t i) { absolute_index = i; }
+	void set_absolute_index(uint64_t p_index) { absolute_index = p_index; }
 	float get_elapsed_time() { return elapsedTime; }
-	void set_elapsed_time(float time) { elapsedTime = time; }
+	void set_elapsed_time(float p_elapsed_time) { elapsedTime = p_elapsed_time; }
 	bool is_visible() { return visibility; }
-	void set_visibility(bool v) { visibility = v; }
+	void set_visibility(bool p_vis) { visibility = p_vis; }
 	Point2 get_offset() { return offset; }
-	void set_offset(Point2 o) { offset = o; }
+	void set_offset(Point2 p_offset) { offset = p_offset; }
 	Color get_color() { return color; }
-	void set_color(Color c) { color = c; }
+	void set_color(Color p_color) { color = p_color; }
 	int get_character() { return (int)character; }
-	void set_character(int c) { character = (CharType)c; }
+	void set_character(int p_char) { character = (CharType)p_char; }
 	Dictionary get_environment() { return environment; }
-	void set_environment(Dictionary d) { environment = d; }
+	void set_environment(Dictionary p_environment) { environment = p_environment; }
 
-	Variant get_or(String key, Variant default_value);
+	Variant get_value_or(String p_key, Variant p_default_value);
 };
 
 #endif // RICH_TEXT_EFFECT_H
