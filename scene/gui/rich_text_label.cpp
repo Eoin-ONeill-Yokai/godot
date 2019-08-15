@@ -467,11 +467,11 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 																				 faded_visibility > 0.0f);
 
 								for (int j = 0; j < fx_stack.size(); j++) {
-									ItemCustomFX *item_custom = dynamic_cast<ItemCustomFX *>(fx_stack[j]);
-									ItemShake *item_shake = dynamic_cast<ItemShake *>(fx_stack[j]);
-									ItemWave *item_wave = dynamic_cast<ItemWave *>(fx_stack[j]);
-									ItemTornado *item_tornado = dynamic_cast<ItemTornado *>(fx_stack[j]);
-									ItemRainbow *item_rainbow = dynamic_cast<ItemRainbow *>(fx_stack[j]);
+									ItemCustomFX *item_custom = Object::cast_to<ItemCustomFX>(fx_stack[j]);
+									ItemShake *item_shake = Object::cast_to<ItemShake>(fx_stack[j]);
+									ItemWave *item_wave = Object::cast_to<ItemWave>(fx_stack[j]);
+									ItemTornado *item_tornado = Object::cast_to<ItemTornado>(fx_stack[j]);
+									ItemRainbow *item_rainbow = Object::cast_to<ItemRainbow>(fx_stack[j]);
 
 									if (item_custom && custom_fx_ok) {
 										Ref<CharFXTransform> charfx = Ref<CharFXTransform>(memnew(CharFXTransform));
@@ -884,7 +884,7 @@ void RichTextLabel::_update_scroll() {
 void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float deltaTime) {
 	Item *it = p_frame;
 	while (it) {
-		ItemFX *ifx = dynamic_cast<ItemFX *>(it);
+		ItemFX *ifx = Object::cast_to<ItemFX>(it);
 
 		if (!ifx) {
 			it = _get_next_item(it, true);
@@ -893,7 +893,7 @@ void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float deltaTim
 
 		ifx->elapsedTime += deltaTime;
 
-		ItemShake *shake = dynamic_cast<ItemShake *>(it);
+		ItemShake *shake = Object::cast_to<ItemShake>(it);
 		if (shake) {
 			bool cycle = (shake->elapsedTime > (1.0f / shake->rate));
 			if (cycle) {

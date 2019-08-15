@@ -103,7 +103,7 @@ private:
 		}
 	};
 
-	struct Item {
+	struct Item : public Object {
 
 		int index;
 		Item *parent;
@@ -397,7 +397,7 @@ private:
 		T *result = NULL;
 		while (item) {
 			if (item->type == type) {
-				result = dynamic_cast<T *>(item);
+				result = Object::cast_to<T>(item);
 				if (result)
 					return result;
 			}
@@ -410,7 +410,7 @@ private:
 	void _fetch_item_stack(Item *p_item, Vector<T *> &stack) {
 		Item *item = p_item;
 		while (item) {
-			T *found = dynamic_cast<T *>(item);
+			T *found = Object::cast_to<T>(item);
 			if (found) {
 				stack.push_back(found);
 			}
