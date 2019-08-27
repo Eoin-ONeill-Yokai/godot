@@ -456,8 +456,8 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 
 								float faded_visibility = 1.0f;
 								if (fade) {
-									if (c_item_offset >= fade->startingIndex) {
-										faded_visibility -= (float)(c_item_offset - fade->startingIndex) / (float)fade->length;
+									if (c_item_offset >= fade->starting_index) {
+										faded_visibility -= (float)(c_item_offset - fade->starting_index) / (float)fade->length;
 										faded_visibility = faded_visibility < 0.0f ? 0.0f : faded_visibility;
 									}
 									fx_color.a = faded_visibility;
@@ -477,7 +477,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 										Ref<CharFXTransform> charfx = Ref<CharFXTransform>(memnew(CharFXTransform));
 										Ref<RichTextEffect> custom_effect = _get_custom_effect_by_code(item_custom->identifier);
 										if (!custom_effect.is_null()) {
-											charfx->elapsedTime = item_custom->elapsedTime;
+											charfx->elapsed_time = item_custom->elapsed_time;
 											charfx->environment = item_custom->environment;
 											charfx->relative_index = c_item_offset;
 											charfx->absolute_index = p_char_count;
@@ -500,7 +500,7 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 										uint64_t max_rand = 2147483647;
 										double current_offset = Math::range_lerp(char_current_rand % max_rand, 0, max_rand, 0.0f, 2.f * (float)Math_PI);
 										double previous_offset = Math::range_lerp(char_previous_rand % max_rand, 0, max_rand, 0.0f, 2.f * (float)Math_PI);
-										double n_time = (double)(item_shake->elapsedTime / (0.5f / item_shake->rate));
+										double n_time = (double)(item_shake->elapsed_time / (0.5f / item_shake->rate));
 										n_time = (n_time > 1.0) ? 1.0 : n_time;
 										fx_offset += Point2(Math::lerp(Math::sin(previous_offset),
 																	Math::sin(current_offset),
@@ -510,14 +510,14 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 																	 n_time)) *
 													 (float)item_shake->strength / 10.0f;
 									} else if (item_wave) {
-										double value = Math::sin(item_wave->frequency * item_wave->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_wave->amplitude / 10.0f);
+										double value = Math::sin(item_wave->frequency * item_wave->elapsed_time + ((p_ofs.x + pofs) / 50)) * (item_wave->amplitude / 10.0f);
 										fx_offset += Point2(0, 1) * value;
 									} else if (item_tornado) {
-										double torn_x = Math::sin(item_tornado->frequency * item_tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
-										double torn_y = Math::cos(item_tornado->frequency * item_tornado->elapsedTime + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
+										double torn_x = Math::sin(item_tornado->frequency * item_tornado->elapsed_time + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
+										double torn_y = Math::cos(item_tornado->frequency * item_tornado->elapsed_time + ((p_ofs.x + pofs) / 50)) * (item_tornado->radius);
 										fx_offset += Point2(torn_x, torn_y);
 									} else if (item_rainbow) {
-										fx_color = fx_color.from_hsv(item_rainbow->frequency * (item_rainbow->elapsedTime + ((p_ofs.x + pofs) / 50)),
+										fx_color = fx_color.from_hsv(item_rainbow->frequency * (item_rainbow->elapsed_time + ((p_ofs.x + pofs) / 50)),
 												item_rainbow->saturation,
 												item_rainbow->value,
 												fx_color.a);
@@ -881,7 +881,7 @@ void RichTextLabel::_update_scroll() {
 	}
 }
 
-void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float deltaTime) {
+void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float p_delta_time) {
 	Item *it = p_frame;
 	while (it) {
 		ItemFX *ifx = Object::cast_to<ItemFX>(it);
@@ -891,13 +891,13 @@ void RichTextLabel::_update_fx(RichTextLabel::ItemFrame *p_frame, float deltaTim
 			continue;
 		}
 
-		ifx->elapsedTime += deltaTime;
+		ifx->elapsed_time += p_delta_time;
 
 		ItemShake *shake = Object::cast_to<ItemShake>(it);
 		if (shake) {
-			bool cycle = (shake->elapsedTime > (1.0f / shake->rate));
+			bool cycle = (shake->elapsed_time > (1.0f / shake->rate));
 			if (cycle) {
-				shake->elapsedTime -= (1.0f / shake->rate);
+				shake->elapsed_time -= (1.0f / shake->rate);
 				shake->reroll_random();
 			}
 		}
@@ -983,7 +983,7 @@ void RichTextLabel::_notification(int p_what) {
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			float dt = get_process_delta_time();
 
-			for (int i = 0; i < customEffects.size(); i++) {
+			for (int i = 0; i < custom_effects.size(); i++) {
 			}
 
 			_update_fx(main, dt);
@@ -1393,11 +1393,11 @@ bool RichTextLabel::_find_strikethrough(Item *p_item) {
 	return false;
 }
 
-bool RichTextLabel::_find_by_type(Item *p_item, ItemType type) {
+bool RichTextLabel::_find_by_type(Item *p_item, ItemType p_type) {
 	Item *item = p_item;
 
 	while (item) {
-		if (item->type == type) {
+		if (item->type == p_type) {
 			return true;
 		}
 		item = item->parent;
@@ -1737,46 +1737,46 @@ void RichTextLabel::push_table(int p_columns) {
 	_add_item(item, true, true);
 }
 
-void RichTextLabel::push_fade(int startIndex, int length) {
+void RichTextLabel::push_fade(int p_start_index, int p_length) {
 	ItemFade *item = memnew(ItemFade);
-	item->startingIndex = startIndex;
-	item->length = length;
+	item->starting_index = p_start_index;
+	item->length = p_length;
 	_add_item(item, true);
 }
 
-void RichTextLabel::push_shake(int strength = 10, float rate = 24.0f) {
+void RichTextLabel::push_shake(int p_strength = 10, float p_rate = 24.0f) {
 	ItemShake *item = memnew(ItemShake);
-	item->strength = strength;
-	item->rate = rate;
+	item->strength = p_strength;
+	item->rate = p_rate;
 	_add_item(item, true);
 }
 
-void RichTextLabel::push_wave(float frequency = 1.0f, float amplitude = 10.0f) {
+void RichTextLabel::push_wave(float p_frequency = 1.0f, float p_amplitude = 10.0f) {
 	ItemWave *item = memnew(ItemWave);
-	item->frequency = frequency;
-	item->amplitude = amplitude;
+	item->frequency = p_frequency;
+	item->amplitude = p_amplitude;
 	_add_item(item, true);
 }
 
-void RichTextLabel::push_tornado(float frequency = 1.0f, float radius = 10.0f) {
+void RichTextLabel::push_tornado(float p_frequency = 1.0f, float p_radius = 10.0f) {
 	ItemTornado *item = memnew(ItemTornado);
-	item->frequency = frequency;
-	item->radius = radius;
+	item->frequency = p_frequency;
+	item->radius = p_radius;
 	_add_item(item, true);
 }
 
-void RichTextLabel::push_rainbow(float saturation, float value, float frequency) {
+void RichTextLabel::push_rainbow(float p_saturation, float p_value, float p_frequency) {
 	ItemRainbow *item = memnew(ItemRainbow);
-	item->frequency = frequency;
-	item->saturation = saturation;
-	item->value = value;
+	item->frequency = p_frequency;
+	item->saturation = p_saturation;
+	item->value = p_value;
 	_add_item(item, true);
 }
 
-void RichTextLabel::push_customfx(String identifier, Dictionary environment) {
+void RichTextLabel::push_customfx(String p_identifier, Dictionary p_environment) {
 	ItemCustomFX *item = memnew(ItemCustomFX);
-	item->identifier = identifier;
-	item->environment = environment;
+	item->identifier = p_identifier;
+	item->environment = p_environment;
 	_add_item(item, true);
 }
 
@@ -2502,10 +2502,10 @@ float RichTextLabel::get_percent_visible() const {
 }
 
 void RichTextLabel::set_effects(const Vector<Variant> &effects) {
-	customEffects.clear();
+	custom_effects.clear();
 	for (int i = 0; i < effects.size(); i++) {
 		Ref<RichTextEffect> effect = Ref<RichTextEffect>(effects[i]);
-		customEffects.push_back(effect);
+		custom_effects.push_back(effect);
 	}
 
 	parse_bbcode(bbcode);
@@ -2513,8 +2513,8 @@ void RichTextLabel::set_effects(const Vector<Variant> &effects) {
 
 Vector<Variant> RichTextLabel::get_effects() {
 	Vector<Variant> r;
-	for (int i = 0; i < customEffects.size(); i++) {
-		r.push_back(customEffects[i].get_ref_ptr());
+	for (int i = 0; i < custom_effects.size(); i++) {
+		r.push_back(custom_effects[i].get_ref_ptr());
 	}
 	return r;
 }
@@ -2524,7 +2524,7 @@ void RichTextLabel::install_effect(const Variant effect) {
 	rteffect = effect;
 
 	if (rteffect.is_valid()) {
-		customEffects.push_back(effect);
+		custom_effects.push_back(effect);
 		parse_bbcode(bbcode);
 	}
 }
@@ -2696,24 +2696,24 @@ Size2 RichTextLabel::get_minimum_size() const {
 	return Size2();
 }
 
-Ref<RichTextEffect> RichTextLabel::_get_custom_effect_by_code(String bbcode_identifier) {
+Ref<RichTextEffect> RichTextLabel::_get_custom_effect_by_code(String p_bbcode_identifier) {
 	Ref<RichTextEffect> r;
-	for (int i = 0; i < customEffects.size(); i++) {
-		if (!customEffects[i].is_valid())
+	for (int i = 0; i < custom_effects.size(); i++) {
+		if (!custom_effects[i].is_valid())
 			continue;
 
-		if (customEffects[i]->get_bbcode() == bbcode_identifier) {
-			r = customEffects[i];
+		if (custom_effects[i]->get_bbcode() == p_bbcode_identifier) {
+			r = custom_effects[i];
 		}
 	}
 
 	return r;
 }
 
-Dictionary RichTextLabel::parse_expressions_for_values(Vector<String> expressions) {
+Dictionary RichTextLabel::parse_expressions_for_values(Vector<String> p_expressions) {
 	Dictionary d = Dictionary();
-	for (int i = 0; i < expressions.size(); i++) {
-		String expression = expressions[i];
+	for (int i = 0; i < p_expressions.size(); i++) {
+		String expression = p_expressions[i];
 
 		Array a = Array();
 		Vector<String> parts = expression.split("=", true);

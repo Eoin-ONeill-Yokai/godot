@@ -60,7 +60,7 @@ public:
 	Point2 offset;
 	Color color;
 	CharType character;
-	float elapsedTime;
+	float elapsed_time;
 	Dictionary environment;
 
 	CharFXTransform();
@@ -68,8 +68,8 @@ public:
 	void set_relative_index(uint64_t p_index) { relative_index = p_index; }
 	uint64_t get_absolute_index() { return absolute_index; }
 	void set_absolute_index(uint64_t p_index) { absolute_index = p_index; }
-	float get_elapsed_time() { return elapsedTime; }
-	void set_elapsed_time(float p_elapsed_time) { elapsedTime = p_elapsed_time; }
+	float get_elapsed_time() { return elapsed_time; }
+	void set_elapsed_time(float p_elapsed_time) { elapsed_time = p_elapsed_time; }
 	bool is_visible() { return visibility; }
 	void set_visibility(bool p_vis) { visibility = p_vis; }
 	Point2 get_offset() { return offset; }

@@ -222,17 +222,17 @@ private:
 	};
 
 	struct ItemFade : public Item {
-		int startingIndex;
+		int starting_index;
 		int length;
 
 		ItemFade() { type = ITEM_FADE; }
 	};
 
 	struct ItemFX : public Item {
-		float elapsedTime;
+		float elapsed_time;
 
 		ItemFX() {
-			elapsedTime = 0.0f;
+			elapsed_time = 0.0f;
 		}
 	};
 
@@ -341,7 +341,7 @@ private:
 	ItemMeta *meta_hovering;
 	Variant current_meta;
 
-	Vector<Ref<RichTextEffect> > customEffects;
+	Vector<Ref<RichTextEffect> > custom_effects;
 
 	void _invalidate_current_line(ItemFrame *p_frame);
 	void _validate_line_caches(ItemFrame *p_frame);
@@ -390,13 +390,13 @@ private:
 	bool _find_strikethrough(Item *p_item);
 	bool _find_meta(Item *p_item, Variant *r_meta, ItemMeta **r_item = NULL);
 	bool _find_layout_subitem(Item *from, Item *to);
-	bool _find_by_type(Item *p_item, ItemType type);
+	bool _find_by_type(Item *p_item, ItemType p_type);
 	template <typename T>
-	T *_fetch_by_type(Item *p_item, ItemType type) {
+	T *_fetch_by_type(Item *p_item, ItemType p_type) {
 		Item *item = p_item;
 		T *result = NULL;
 		while (item) {
-			if (item->type == type) {
+			if (item->type == p_type) {
 				result = Object::cast_to<T>(item);
 				if (result)
 					return result;
@@ -407,19 +407,19 @@ private:
 		return result;
 	};
 	template <typename T>
-	void _fetch_item_stack(Item *p_item, Vector<T *> &stack) {
+	void _fetch_item_stack(Item *p_item, Vector<T *> &r_stack) {
 		Item *item = p_item;
 		while (item) {
 			T *found = Object::cast_to<T>(item);
 			if (found) {
-				stack.push_back(found);
+				r_stack.push_back(found);
 			}
 			item = item->parent;
 		}
 	}
 
 	void _update_scroll();
-	void _update_fx(ItemFrame *p_frame, float deltaTime);
+	void _update_fx(ItemFrame *p_frame, float p_delta_time);
 	void _scroll_changed(double);
 
 	void _gui_input(Ref<InputEvent> p_event);
@@ -427,8 +427,8 @@ private:
 	Item *_get_prev_item(Item *p_item, bool p_free = false);
 
 	Rect2 _get_text_rect();
-	Ref<RichTextEffect> _get_custom_effect_by_code(String bbcode_identifier);
-	virtual Dictionary parse_expressions_for_values(Vector<String> expressions);
+	Ref<RichTextEffect> _get_custom_effect_by_code(String p_bbcode_identifier);
+	virtual Dictionary parse_expressions_for_values(Vector<String> p_expressions);
 
 	bool use_bbcode;
 	String bbcode;
@@ -455,12 +455,12 @@ public:
 	void push_list(ListType p_list);
 	void push_meta(const Variant &p_meta);
 	void push_table(int p_columns);
-	void push_fade(int startIndex, int length);
-	void push_shake(int level, float rate);
-	void push_wave(float frequency, float amplitude);
-	void push_tornado(float frequency, float radius);
-	void push_rainbow(float saturation, float value, float frequency);
-	void push_customfx(String identifier, Dictionary environment);
+	void push_fade(int p_start_index, int p_length);
+	void push_shake(int p_level, float p_rate);
+	void push_wave(float p_frequency, float p_amplitude);
+	void push_tornado(float p_frequency, float p_radius);
+	void push_rainbow(float p_saturation, float p_value, float p_frequency);
+	void push_customfx(String p_identifier, Dictionary p_environment);
 	void set_table_column_expand(int p_column, bool p_expand, int p_ratio = 1);
 	int get_current_table_column() const;
 	void push_cell();
